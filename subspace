@@ -70,6 +70,7 @@ ExecStart=$(which subspace) \
   --ws-external \
   --validator \
   --telemetry-url "wss://telemetry.polkadot.io/submit/ 1" \
+  --telemetry-url "wss://telemetry.subspace.network/submit 1" \
   --name $NODENAME
 Restart=on-failure
 RestartSec=3
