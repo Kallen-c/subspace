@@ -1,0 +1,371 @@
+#!/bin/bash
+
+while true
+do
+
+# Logo
+curl -s https://raw.githubusercontent.com/Kallen-c/utils/main/logo.sh | bash
+
+# Menu
+
+PS3='Select an action: '
+options=(
+"Prepare server for install"
+"Install and run Node"
+"Log Node"
+"Log Farmer"
+"Update Node"
+"Update Node 2"
+"Restart"
+"Delete Node"
+"Exit")
+select opt in "${options[@]}"
+do
+case $opt in
+
+"Restart")
+sudo systemctl restart subspace subspacefarm
+break
+;;
+
+"Update Node 2")
+sudo systemctl stop subspace subspacefarm
+
+apt install jq
+cp /root/.local/share/subspace-node/chains/subspace_gemini_1b/network/secret_ed25519 $HOME
+farmer wipe && \ subspace purge-chain --chain gemini-1 -y > /dev/null 2>&1 && \ subspace purge-chain --chain testnet -y > /dev/null 2>&1
+
+systemctl stop subspace subspacefarm
+systemctl disable subspace subspacefarm
+rm /etc/systemd/system/subspace.service
+rm /etc/systemd/system/subspacefarm.service
+rm -r /usr/local/bin/subspace
+rm -r /usr/local/bin/farmer
+
+echo "============================================================"
+echo "Write the name of your node"
+echo "============================================================"
+read NODENAME
+echo 'export NODENAME='$NODENAME >> $HOME/.bash_profile
+echo "============================================================"
+echo "Enter your wallet address"
+echo "============================================================"
+read WALLETADDRESS
+echo 'export WALLETADDRESS='$WALLETADDRESS >> $HOME/.bash_profile
+echo "============================================================"
+echo "Write plot size for farmer(Exemple 100G)!"
+echo "============================================================"
+read PLOTSIZE
+echo 'export PLOTSIZE='$PLOTSIZE >> $HOME/.bash_profile
+source ~/.bash_profile
+
+mkdir $HOME/subspace; \
+cd $HOME/subspace && \
+VER=$(wget -qO- https://api.github.com/repos/subspace/subspace/releases/latest | jq -r ".tag_name") && \
+wget https://github.com/subspace/subspace/releases/download/${VER}/subspace-farmer-ubuntu-x86_64-${VER} -O farmer && \
+wget https://github.com/subspace/subspace/releases/download/${VER}/subspace-node-ubuntu-x86_64-${VER} -O subspace && \
+sudo chmod +x * && \
+sudo mv * /usr/local/bin/ && \
+cd $HOME && \
+rm -Rvf $HOME/subspace
+
+sudo tee <<EOF >/dev/null /etc/systemd/system/subspace.service
+[Unit]
+Description=Subspace Node
+After=network.target
+[Service]
+Type=simple
+User=$USER
+ExecStart=$(which subspace) \\
+--chain="gemini-1" \\
+--execution="wasm" \\
+--pruning=1024 \\
+--keep-blocks=1024 \\
+--validator \\
+--reserved-nodes="/dns/bootstrap-0.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWF9CgB8bDvWCvzPPZrWG3awjhS7gPFu7MzNPkF9F9xWwc" \\
+--reserved-nodes="/dns/bootstrap-1.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWLrpSArNaZ3Hvs4mABwYGDY1Rf2bqiNTqUzLm7koxedQQ" \\
+--reserved-nodes="/dns/bootstrap-10.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWNGf1qr5411JwPHgwqftjEL6RgFRUEFnsJpTMx6zKEdWn" \\
+--reserved-nodes="/dns/bootstrap-11.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWM7Qe4rVfzUAMucb5GTs3m4ts5ZrFg83LZnLhRCjmYEJK" \\
+--reserved-nodes="/dns/bootstrap-2.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWNN5uuzPtDNtWoLU28ZDCQP7HTdRjyWbNYo5EA6fZDAMD" \\
+--reserved-nodes="/dns/bootstrap-3.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWM47uyGtvbUFt5tmWdFezNQjwbYZmWE19RpWhXgRzuEqh" \\
+--reserved-nodes="/dns/bootstrap-4.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWNMEKxFZm9mbwPXfQ3LQaUgin9JckCq7TJdLS2UnH6E7z" \\
+--reserved-nodes="/dns/bootstrap-5.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWFfEtDmpb8BWKXoEAgxkKAMfxU2yGDq8nK87MqnHvXsok" \\
+--reserved-nodes="/dns/bootstrap-6.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWHSeob6t43ukWAGnkTcQEoRaFSUWphGDCKF1uefG2UGDh" \\
+--reserved-nodes="/dns/bootstrap-7.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWKwrGSmaGJBD29agJGC3MWiA7NZt34Vd98f6VYgRbV8hH" \\
+--reserved-nodes="/dns/bootstrap-8.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWCXFrzVGtAzrTUc4y7jyyvhCcNTAcm18Zj7UN46whZ5Bm" \\
+--reserved-nodes="/dns/bootstrap-9.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWNGxWQ4sajzW1akPRZxjYM5TszRtsCnEiLhpsGrsHrFC6" \\
+--reserved-only \\
+--name="$NODENAME"
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=65535
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo tee <<EOF >/dev/null /etc/systemd/system/subspacefarm.service
+[Unit]
+Description=Subspace Farmer
+After=network.target
+[Service]
+Type=simple
+User=$USER
+ExecStart=$(which farmer) farm \\
+--reward-address=$WALLETADDRESS \\
+--plot-size=$PLOTSIZE
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=10000
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl restart systemd-journald
+sudo systemctl daemon-reload
+sudo systemctl enable subspace subspacefarm
+sudo systemctl start subspacefarm subspace
+
+sleep 5
+
+sudo systemctl stop subspacefarm subspace
+rm /root/.local/share/subspace-node/chains/subspace_gemini_1b/network/secret_ed25519
+mv $HOME/secret_ed25519 /root/.local/share/subspace-node/chains/subspace_gemini_1b/network/
+sudo systemctl restart subspacefarm subspace
+break
+break
+;;
+
+"Update Node")
+sudo systemctl stop subspace subspacefarm
+
+apt install jq
+farmer wipe && \ subspace purge-chain --chain gemini-1 -y > /dev/null 2>&1 && \ subspace purge-chain --chain testnet -y > /dev/null 2>&1
+cp /root/.local/share/subspace/chains/subspace_test/network/secret_ed25519 $HOME
+
+systemctl stop subspace subspacefarm
+systemctl disable subspace subspacefarm
+rm /etc/systemd/system/subspace.service
+rm /etc/systemd/system/subspacefarm.service
+rm -r /usr/local/bin/subspace
+rm -r /usr/local/bin/farmer
+
+echo "============================================================"
+echo "Write the name of your node"
+echo "============================================================"
+read NODENAME
+echo 'export NODENAME='$NODENAME >> $HOME/.bash_profile
+echo "============================================================"
+echo "Enter your wallet address"
+echo "============================================================"
+read WALLETADDRESS
+echo 'export WALLETADDRESS='$WALLETADDRESS >> $HOME/.bash_profile
+echo "============================================================"
+echo "Write plot size for farmer(Exemple 100G)!"
+echo "============================================================"
+read PLOTSIZE
+echo 'export PLOTSIZE='$PLOTSIZE >> $HOME/.bash_profile
+source ~/.bash_profile
+
+mkdir $HOME/subspace; \
+cd $HOME/subspace && \
+VER=$(wget -qO- https://api.github.com/repos/subspace/subspace/releases/latest | jq -r ".tag_name") && \
+wget https://github.com/subspace/subspace/releases/download/${VER}/subspace-farmer-ubuntu-x86_64-${VER} -O farmer && \
+wget https://github.com/subspace/subspace/releases/download/${VER}/subspace-node-ubuntu-x86_64-${VER} -O subspace && \
+sudo chmod +x * && \
+sudo mv * /usr/local/bin/ && \
+cd $HOME && \
+rm -Rvf $HOME/subspace
+
+sudo tee <<EOF >/dev/null /etc/systemd/system/subspace.service
+[Unit]
+Description=Subspace Node
+After=network.target
+[Service]
+Type=simple
+User=$USER
+ExecStart=$(which subspace) \\
+--chain="gemini-1" \\
+--execution="wasm" \\
+--pruning=1024 \\
+--keep-blocks=1024 \\
+--validator \\
+--reserved-nodes="/dns/bootstrap-0.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWF9CgB8bDvWCvzPPZrWG3awjhS7gPFu7MzNPkF9F9xWwc" \\
+--reserved-nodes="/dns/bootstrap-1.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWLrpSArNaZ3Hvs4mABwYGDY1Rf2bqiNTqUzLm7koxedQQ" \\
+--reserved-nodes="/dns/bootstrap-10.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWNGf1qr5411JwPHgwqftjEL6RgFRUEFnsJpTMx6zKEdWn" \\
+--reserved-nodes="/dns/bootstrap-11.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWM7Qe4rVfzUAMucb5GTs3m4ts5ZrFg83LZnLhRCjmYEJK" \\
+--reserved-nodes="/dns/bootstrap-2.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWNN5uuzPtDNtWoLU28ZDCQP7HTdRjyWbNYo5EA6fZDAMD" \\
+--reserved-nodes="/dns/bootstrap-3.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWM47uyGtvbUFt5tmWdFezNQjwbYZmWE19RpWhXgRzuEqh" \\
+--reserved-nodes="/dns/bootstrap-4.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWNMEKxFZm9mbwPXfQ3LQaUgin9JckCq7TJdLS2UnH6E7z" \\
+--reserved-nodes="/dns/bootstrap-5.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWFfEtDmpb8BWKXoEAgxkKAMfxU2yGDq8nK87MqnHvXsok" \\
+--reserved-nodes="/dns/bootstrap-6.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWHSeob6t43ukWAGnkTcQEoRaFSUWphGDCKF1uefG2UGDh" \\
+--reserved-nodes="/dns/bootstrap-7.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWKwrGSmaGJBD29agJGC3MWiA7NZt34Vd98f6VYgRbV8hH" \\
+--reserved-nodes="/dns/bootstrap-8.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWCXFrzVGtAzrTUc4y7jyyvhCcNTAcm18Zj7UN46whZ5Bm" \\
+--reserved-nodes="/dns/bootstrap-9.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWNGxWQ4sajzW1akPRZxjYM5TszRtsCnEiLhpsGrsHrFC6" \\
+--reserved-only \\
+--name="$NODENAME"
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=65535
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo tee <<EOF >/dev/null /etc/systemd/system/subspacefarm.service
+[Unit]
+Description=Subspace Farmer
+After=network.target
+[Service]
+Type=simple
+User=$USER
+ExecStart=$(which farmer) farm \\
+--reward-address=$WALLETADDRESS \\
+--plot-size=$PLOTSIZE
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=10000
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl restart systemd-journald
+sudo systemctl daemon-reload
+sudo systemctl enable subspace subspacefarm
+sudo systemctl start subspacefarm subspace
+
+sleep 5
+
+sudo systemctl stop subspacefarm subspace
+rm /root/.local/share/subspace-node/chains/subspace_gemini_1b/network/secret_ed25519
+mv $HOME/secret_ed25519 /root/.local/share/subspace-node/chains/subspace_gemini_1b/network/
+sudo systemctl restart subspacefarm subspace
+break
+;;
+
+"Prepare server for install")
+echo "============================================================"
+echo "Preparations have begun"
+echo "============================================================"
+sudo apt-get update && sudo apt-get upgrade -y
+sudo apt-get install wget jq -y
+break
+;;
+
+"Install and run Node")
+echo "============================================================"
+echo "Write the name of your node"
+echo "============================================================"
+read NODENAME
+echo 'export NODENAME='$NODENAME >> $HOME/.bash_profile
+echo "============================================================"
+echo "Enter your wallet address"
+echo "============================================================"
+read WALLETADDRESS
+echo 'export WALLETADDRESS='$WALLETADDRESS >> $HOME/.bash_profile
+echo "============================================================"
+echo "Write plot size for farmer(100G and more)"
+echo "============================================================"
+read PLOTSIZE
+echo 'export PLOTSIZE='$PLOTSIZE >> $HOME/.bash_profile
+source ~/.bash_profile
+
+apt install jq
+
+mkdir $HOME/subspace; \
+cd $HOME/subspace && \
+VER=$(wget -qO- https://api.github.com/repos/subspace/subspace/releases/latest | jq -r ".tag_name") && \
+wget https://github.com/subspace/subspace/releases/download/${VER}/subspace-farmer-ubuntu-x86_64-${VER} -O farmer && \
+wget https://github.com/subspace/subspace/releases/download/${VER}/subspace-node-ubuntu-x86_64-${VER} -O subspace && \
+sudo chmod +x * && \
+sudo mv * /usr/local/bin/ && \
+cd $HOME && \
+rm -Rvf $HOME/subspace
+
+sudo tee <<EOF >/dev/null /etc/systemd/system/subspace.service
+[Unit]
+Description=Subspace Node
+After=network.target
+[Service]
+Type=simple
+User=$USER
+ExecStart=$(which subspace) \\
+--chain="gemini-1" \\
+--execution="wasm" \\
+--pruning=1024 \\
+--keep-blocks=1024 \\
+--validator \\
+--reserved-nodes="/dns/bootstrap-0.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWF9CgB8bDvWCvzPPZrWG3awjhS7gPFu7MzNPkF9F9xWwc" \\
+--reserved-nodes="/dns/bootstrap-1.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWLrpSArNaZ3Hvs4mABwYGDY1Rf2bqiNTqUzLm7koxedQQ" \\
+--reserved-nodes="/dns/bootstrap-10.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWNGf1qr5411JwPHgwqftjEL6RgFRUEFnsJpTMx6zKEdWn" \\
+--reserved-nodes="/dns/bootstrap-11.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWM7Qe4rVfzUAMucb5GTs3m4ts5ZrFg83LZnLhRCjmYEJK" \\
+--reserved-nodes="/dns/bootstrap-2.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWNN5uuzPtDNtWoLU28ZDCQP7HTdRjyWbNYo5EA6fZDAMD" \\
+--reserved-nodes="/dns/bootstrap-3.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWM47uyGtvbUFt5tmWdFezNQjwbYZmWE19RpWhXgRzuEqh" \\
+--reserved-nodes="/dns/bootstrap-4.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWNMEKxFZm9mbwPXfQ3LQaUgin9JckCq7TJdLS2UnH6E7z" \\
+--reserved-nodes="/dns/bootstrap-5.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWFfEtDmpb8BWKXoEAgxkKAMfxU2yGDq8nK87MqnHvXsok" \\
+--reserved-nodes="/dns/bootstrap-6.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWHSeob6t43ukWAGnkTcQEoRaFSUWphGDCKF1uefG2UGDh" \\
+--reserved-nodes="/dns/bootstrap-7.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWKwrGSmaGJBD29agJGC3MWiA7NZt34Vd98f6VYgRbV8hH" \\
+--reserved-nodes="/dns/bootstrap-8.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWCXFrzVGtAzrTUc4y7jyyvhCcNTAcm18Zj7UN46whZ5Bm" \\
+--reserved-nodes="/dns/bootstrap-9.gemini-1b.subspace.network/tcp/30333/p2p/12D3KooWNGxWQ4sajzW1akPRZxjYM5TszRtsCnEiLhpsGrsHrFC6" \\
+--reserved-only \\
+--name="$NODENAME"
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=65535
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo tee <<EOF >/dev/null /etc/systemd/system/subspacefarm.service
+[Unit]
+Description=Subspace Farmer
+After=network.target
+[Service]
+Type=simple
+User=$USER
+ExecStart=$(which farmer) farm \\
+--reward-address=$WALLETADDRESS \\
+--plot-size=$PLOTSIZE
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=10000
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl restart systemd-journald
+sudo systemctl daemon-reload
+sudo systemctl enable subspace subspacefarm
+sudo systemctl restart subspacefarm subspace
+
+break
+;;
+
+"Delete Node")
+
+systemctl stop subspace subspacefarm
+systemctl disable subspace subspacefarm
+rm /etc/systemd/system/subspace.service
+rm /etc/systemd/system/subspacefarm.service
+rm -r /usr/local/bin/subspace
+rm -r /usr/local/bin/farmer
+
+break
+;;
+
+"Log Node")
+sudo journalctl -n 100 -f -u subspace
+break
+;;
+
+"Log Farmer")
+sudo journalctl -n 100 -f -u subspacefarm
+break
+;;
+
+
+"Exit")
+exit
+;;
+*) echo "invalid option $REPLY";;
+esac
+done
+done
